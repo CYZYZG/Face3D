@@ -87,7 +87,7 @@ def householder_bidiagonalization(A):
 
     return U, B, Vt
 
-def jacobi_eigen_decomposition(A, tol=1e-12, max_iter=100):
+def jacobi_eigen_decomposition(A, tol=1e-12, max_iter=1000):
     """
     使用 Jacobi 迭代法对对称矩阵 A (n×n) 求特征值和特征向量。
     返回特征值列表和对应的特征向量矩阵（列为特征向量）。
@@ -140,6 +140,12 @@ def jacobi_eigen_decomposition(A, tol=1e-12, max_iter=100):
             V[i][q] = c*viq + s*vip
 
     eigvals = [M[i][i] for i in range(n)]
+    # **确保特征向量列规范化（数值稳定）**
+    for j in range(n):
+        norm = math.sqrt(sum(V[i][j]*V[i][j] for i in range(n)))
+        if norm > 0:
+            for i in range(n):
+                V[i][j] /= norm
     return eigvals, V
 
 def svd_golub_reinsch(A, full_matrices=True):
@@ -243,23 +249,24 @@ def svd_golub_reinsch(A, full_matrices=True):
     # 3. 构造最终 U 和 Vt
     if full_matrices:
         U_final = [[0.0]*m for _ in range(m)]
+        # 注意：U_B_full 是“列向量的列表”，U_B_full[j][k] = 第 j 列第 k 个分量
         for i in range(m):
             for j in range(m):
                 s = 0.0
-                for k in range(m):
-                    s += U_bi[i][k] * U_B_full[k][j]
+                for kk in range(m):
+                    s += U_bi[i][kk] * U_B_full[j][kk]   # <--- 这里用 U_B_full[j][kk]
                 U_final[i][j] = s
     else:
-        k = n  # 经济形取前 n 列
-        U_final = [[0.0]*k for _ in range(m)]
+        kkcols = n  # 经济形取前 n 列
+        U_final = [[0.0]*kkcols for _ in range(m)]
         for i in range(m):
-            for j in range(k):
+            for j in range(kkcols):
                 s = 0.0
-                for k2 in range(m):
-                    s += U_bi[i][k2] * U_B_full[k2][j]
+                for kk in range(m):
+                    s += U_bi[i][kk] * U_B_full[j][kk]   # <--- 同样修正
                 U_final[i][j] = s
 
-    # V_final^T = V_B^T * Vt_bi
+    # V_final^T = V_B^T * Vt_bi  （原代码这部分是正确的）
     Vt_final = [[0.0]*n for _ in range(n)]
     for i in range(n):
         for j in range(n):
@@ -268,8 +275,27 @@ def svd_golub_reinsch(A, full_matrices=True):
                 s += V_B_mat[k][i] * Vt_bi[k][j]
             Vt_final[i][j] = s
 
-    if not full_matrices:
-        return U_final, S_vals, Vt_final
+    # ----- 确定性符号约定（有助于和 NumPy 一致） -----
+    # 对每个奇异值列，确保 U 在其最大绝对分量处为非负（否则翻转该列 & 对应的 Vt 行）
+    for j in range(len(S_vals)):
+        # 找到 U_final[:, j] 中绝对值最大的下标
+        if full_matrices:
+            col = [U_final[i][j] for i in range(m)]
+            imax = max(range(m), key=lambda r: abs(col[r]))
+            if col[imax] < 0:
+                for i in range(m):
+                    U_final[i][j] = -U_final[i][j]
+                for k in range(n):
+                    Vt_final[j][k] = -Vt_final[j][k]
+        else:
+            col = [U_final[i][j] for i in range(m)]
+            imax = max(range(m), key=lambda r: abs(col[r]))
+            if col[imax] < 0:
+                for i in range(m):
+                    U_final[i][j] = -U_final[i][j]
+                for k in range(n):
+                    Vt_final[j][k] = -Vt_final[j][k]
+
     return U_final, S_vals, Vt_final
 
 
@@ -280,43 +306,53 @@ def random_matrix_3x3(min_val=-100000, max_val=100000):
 # --- 示例用法 ---
 if __name__ == "__main__":
     
-    for A in range(100000):
+    for i in range(10000):
         A = random_matrix_3x3()
         
-        # 示例矩阵 A (3×4)
-        A = [
-            [100351.40695714, 12910.65833372, -10252.58161795],
-            [418.45231489, -13982.11551773, 11103.44467584],
-            [-82718.93688419, 15591.97843369, -12381.86522675]
-        ]
-        print("A\n")
-        print(A)
+        # # 示例矩阵 A (3×4)
+        # A = [
+        #     [100351.40695714, 12910.65833372, -10252.58161795],
+        #     [418.45231489, -13982.11551773, 11103.44467584],
+        #     [-82718.93688419, 15591.97843369, -12381.86522675]
+        # ]
+        # print("A\n")
+        # print(A)
         #计算 SVD（full_matrices=True）
         U, S, Vt = svd_golub_reinsch(A, full_matrices=True)
         U = np.array(U)
         Vt = np.array(Vt)
-        print("U =")
-        print(U)
-        print("S =", S)
-        print("Vt =")
-        print(Vt)
-        print("UV =")
-        print(U@Vt)
+        # print("U =")
+        # print(U)
+        # # print("S =", S)
+        # print("Vt =")
+        # print(Vt)
+        #print("UV =")
+        #print(U@Vt)
+        UV = U@Vt
         # 验证重构精度
         # （如有 NumPy 环境可验证，此处仅演示输出）
-        
+        # print("A\n")
+        # print(A)
         u, s, vh = np.linalg.svd(A)
-        print("U =")
-        print(u)
-        print("S =", s)
-        print("Vt =")
-        print(vh)
-        print("UV =")
+        # print("U =")
+        # print(u)
+        # # print("S =", s)
+        # print("Vt =")
+        # print(vh)
+        #print("UV =")
         
-        print(u@vh)
-        if((U@Vt).any() == (u@vh).any()):
-            print("结果比对一致")
+        #print(u@vh)
+        uv = u@vh
+        count = 0
+        for i in range(3):
+            for j in range(3):
+                if abs(UV[i,j]) - abs(uv[i,j]) > 1e-10:
+                    print(UV[i,j] , uv[i,j])
+                    count+=1
+        
+        if count == 0:
+            # print("结果比对一致")
             pass
         else:
-            print("Error!")
+            print("Error!", count)
         
