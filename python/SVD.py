@@ -87,7 +87,7 @@ def householder_bidiagonalization(A):
 
     return U, B, Vt
 
-def jacobi_eigen_decomposition(A, tol=1e-12, max_iter=1000):
+def jacobi_eigen_decomposition(A, tol=1e-12, max_iter=100):
     """
     使用 Jacobi 迭代法对对称矩阵 A (n×n) 求特征值和特征向量。
     返回特征值列表和对应的特征向量矩阵（列为特征向量）。
@@ -299,60 +299,54 @@ def svd_golub_reinsch(A, full_matrices=True):
     return U_final, S_vals, Vt_final
 
 
-def random_matrix_3x3(min_val=-100000, max_val=100000):
-    """生成一个 3x3 的随机浮点矩阵"""
-    return [[round(random.uniform(min_val, max_val), 2) for _ in range(3)] for _ in range(3)]
+def srand_custom(seed):
+    global next_rand
+    next_rand = seed
+
+def rand_custom():
+    global next_rand
+    next_rand = (next_rand * 1103515245 + 12345) & 0xFFFFFFFF
+    return (next_rand >> 16) & 0x7FFF
+
+def rand_uniform():
+    return rand_custom() / 32768.0
 
 # --- 示例用法 ---
 if __name__ == "__main__":
-    
-    for i in range(10000):
-        A = random_matrix_3x3()
-        
-        # # 示例矩阵 A (3×4)
-        # A = [
-        #     [100351.40695714, 12910.65833372, -10252.58161795],
-        #     [418.45231489, -13982.11551773, 11103.44467584],
-        #     [-82718.93688419, 15591.97843369, -12381.86522675]
-        # ]
-        # print("A\n")
-        # print(A)
-        #计算 SVD（full_matrices=True）
-        U, S, Vt = svd_golub_reinsch(A, full_matrices=True)
-        U = np.array(U)
-        Vt = np.array(Vt)
-        # print("U =")
-        # print(U)
-        # # print("S =", S)
-        # print("Vt =")
-        # print(Vt)
-        #print("UV =")
-        #print(U@Vt)
-        UV = U@Vt
-        # 验证重构精度
-        # （如有 NumPy 环境可验证，此处仅演示输出）
-        # print("A\n")
-        # print(A)
-        u, s, vh = np.linalg.svd(A)
-        # print("U =")
-        # print(u)
-        # # print("S =", s)
-        # print("Vt =")
-        # print(vh)
-        #print("UV =")
-        
-        #print(u@vh)
-        uv = u@vh
-        count = 0
-        for i in range(3):
-            for j in range(3):
-                if abs(UV[i,j]) - abs(uv[i,j]) > 1e-10:
-                    print(UV[i,j] , uv[i,j])
-                    count+=1
-        
-        if count == 0:
-            # print("结果比对一致")
-            pass
-        else:
-            print("Error!", count)
-        
+    srand_custom(42)  # 固定种子
+    with open("output.txt", "w", encoding="utf-8") as f:
+        for i in range(10):
+
+            # 生成 3x3 矩阵
+            A = [[rand_uniform() for _ in range(4)] for _ in range(4)]
+            #print(f"A——{i}\n")
+            #print(A)
+            # #计算 SVD（full_matrices=True）
+            U, S, Vt = svd_golub_reinsch(A, full_matrices=True)
+            U = np.array(U)
+            Vt = np.array(Vt)
+            UV = U@Vt
+            #print("UV =")
+            #print(UV)
+            for i in range(4):
+                for j in range(4):
+                    f.write(f" {UV[i,j]:.8f} ")
+                f.write("\n")
+            # # 验证重构精度
+            # # （如有 NumPy 环境可验证，此处仅演示输出）
+            
+            u, s, vh = np.linalg.svd(A)
+            uv = u@vh
+            #print("uv =")
+            #print(u@vh)
+            count = 0
+            for i in range(4):
+                for j in range(4):
+                    if abs(UV[i,j]) - abs(uv[i,j]) > 1e-10:
+                        print(UV[i,j] , uv[i,j])
+                        count+=1
+            if count == 0:
+                # print("结果比对一致")
+                pass
+            else:
+                print("Error!", count)
