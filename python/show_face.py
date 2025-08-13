@@ -17,22 +17,13 @@ class FaceCubeVisualizer:
         self.dist_coeffs = np.zeros(5, dtype=np.float32)
         self.head_center = np.array([0,0,1000], dtype=np.float32)
 
-        # 立方体顶点
         s = self.cube_size/2
         self.cube_vertices = np.float32([
             [-s,-s,-s],[ s,-s,-s],[ s, s,-s],[-s, s,-s],  # 背面
             [-s,-s, s],[ s,-s, s],[ s, s, s],[-s, s, s],  # 前面
         ])
-        self.cube_edges = [
-            (0,1),(1,2),(2,3),(3,0),
-            (4,5),(5,6),(6,7),(7,4),
-            (0,4),(1,5),(2,6),(3,7)
-        ]
 
-        # 人脸正面朝向摄像机
-        self.face_plane_z = -s  # 靠近摄像机的面
-
-        # 五官相对面局部坐标
+        self.face_plane_z = -s
         self.left_eye_face  = np.array([-50, -25, 0], dtype=np.float32)
         self.right_eye_face = np.array([50, -25, 0], dtype=np.float32)
         self.mouth_face     = np.array([0, 40, 0], dtype=np.float32)
@@ -55,18 +46,37 @@ class FaceCubeVisualizer:
                                          self.dist_coeffs)
         return tuple(projected[0].ravel().astype(int))
 
-    def draw_cube(self, img, R, color=(150,150,150), thickness=2):
-        for i,j in self.cube_edges:
-            p1 = self._project_point(self.cube_vertices[i], R)
-            p2 = self._project_point(self.cube_vertices[j], R)
-            cv2.line(img, p1, p2, color, thickness)
+    def draw_cube_faces(self, img, R):
+        faces = {
+            'back':   [4,5,6,7],
+            'left':   [0,3,7,4],
+            'right':  [1,2,6,5],
+            'top':    [0,1,5,4],
+            'bottom': [3,2,6,7],
+            'front':  [0,1,2,3],
+        }
+        colors = {
+            'back':   (40,70,100),
+            'left':   (50,90,130),
+            'right':  (50,90,130),
+            'top':    (60,110,160),
+            'bottom': (60,110,160),
+            'front':  (80,140,200),
+        }
 
-    def draw_face_plane_color(self, img, R, color=(42,42,165)):
-        # 使用靠近摄像机的面顶点: [0,1,2,3]（背面原顶点，旋转后朝向摄像机）
-        face_pts_3d = [self.cube_vertices[i] for i in [0,1,2,3]]
-        proj_pts = [self._project_point(p, R) for p in face_pts_3d]
-        proj_pts = np.array(proj_pts, dtype=np.int32)
-        cv2.fillPoly(img, [proj_pts], color=color)
+        # 按深度排序：远 -> 近
+        face_depths = []
+        for name, vert_idx in faces.items():
+            pts_3d = np.array([R @ self.cube_vertices[i] + self.head_center for i in vert_idx])
+            z_mean = np.mean(pts_3d[:,2])
+            face_depths.append((z_mean, name, vert_idx))
+        face_depths.sort(reverse=True)  # 远 -> 近
+
+        for _, name, vert_idx in face_depths:
+            pts_3d = [self.cube_vertices[i] for i in vert_idx]
+            proj_pts = [self._project_point(p, R) for p in pts_3d]
+            proj_pts = np.array(proj_pts, dtype=np.int32)
+            cv2.fillPoly(img, [proj_pts], color=colors[name])
 
     def draw_ellipse_on_face(self, img, center_face, width, height, R, color=(0,0,0), thickness=2, num_points=50):
         angles = np.linspace(0,2*np.pi,num_points)
@@ -81,11 +91,8 @@ class FaceCubeVisualizer:
         frame = np.ones((self.img_h,self.img_w,3),np.uint8)*255
         if R is None:
             R = np.eye(3, dtype=np.float32)
-        # 绘制面颜色
-        self.draw_face_plane_color(frame, R, color=(80,140,200))
-        # 绘制立方体线框
-        self.draw_cube(frame, R)
-        # 绘制五官
+        self.draw_cube_faces(frame, R)
+        # 五官
         self.draw_ellipse_on_face(frame, self.left_eye_face, width=50, height=50*0.3*left_eye_ratio, R=R)
         self.draw_ellipse_on_face(frame, self.right_eye_face, width=50, height=50*0.3*right_eye_ratio, R=R)
         self.draw_ellipse_on_face(frame, self.mouth_face, width=70, height=100*0.25*mouth_ratio, R=R)
@@ -107,7 +114,7 @@ class FaceCubeVisualizer:
 if __name__=="__main__":
     vis = FaceCubeVisualizer()
     # 单帧测试
-    R = vis.rotation_matrix_y(15)
+    R = vis.rotation_matrix_y(0)
     frame = vis.visualize_frame(left_eye_ratio=0.8, right_eye_ratio=0.6, mouth_ratio=0.5, R=R)
     cv2.imwrite("face_cube_single.png", frame)
 
